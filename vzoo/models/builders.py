@@ -65,9 +65,8 @@ def build_generative_model(latent_dim,
                            generator_fn=None,
                            inference_model=None,
                            name=None):
-    """Builds generative model (decoder), by passing in a latent tensor (size
-    `latent_dim`) p(z|x), applies a `decoder_fn`, and returns the reconstruction
-    p(x|z).
+    """Builds generative model (decoder), by passing in a latent tensor p(z|x),
+    applies a `generator_fn`, and returns the reconstruction p(x|z).
 
     Parameters
     ----------
@@ -77,10 +76,10 @@ def build_generative_model(latent_dim,
         Shape of output to reconstruct.
     generator_fn : function (defualt=None)
         Generator/decoder function that expects an input tensor `x` and
-        `output_tensor` and returns the reconstructed tensor of an observation.
+        `output_tensor` to return the reconstructed tensor of an observation.
         Example:
             latent_tensor = tf.keras.layers.Input(latent_dim)
-            x_decoded = decoder_fn(latent_tensor, output_shape)
+            x_decoded = generator_fn(latent_tensor, output_shape)
     inference_model : tf.keras.Model (default=None)
         Encoder model that will be automatically transposed if provided.
     name : str (default=None)
@@ -105,48 +104,14 @@ def build_generative_model(latent_dim,
     return model
 
 
-#def Vuild_discriminator_model(input_tensor,
-#                             discriminator_fn,
-#                             **kwargs):
-#   """Builds a discriminator that will be called twice. Once with inputs
-#   from the true distribution q(z|x) and from a shuffled distribution q~(z|x).
-#   The objective of the discriminator is to predict if the inputs is from
-#   q(z|x) or q~(z|x).
-
-#   Parameters
-#   ----------
-#   input_tensor : tf.Tensor
-#       Input tensor to discriminate of shape (batch_size, latent_dim).
-#   discriminator_fn : function
-#       Discriminator function that expects an input tensor `input_tensor` with
-#       any other parameters passed as `**kwargs` and returns two output tensors:
-#           logits : tf.Tensor
-#               Logit outputs from the discriminator of size (batch_size, 2).
-#           probs : tf.Tensor
-#               Probability outputs of the `logits` of size (bathc_size, 2).
-#       Example:
-#           latent_tensor = tf.keras.layers.Input(latent_dim)
-#           logits, probs = fc_discriminiator(latent_tensor)
-#   Returns
-#   -------
-#   discriminator : tf.keras.Model
-#       Discriminator model that accepts an `input_tensor` of size
-#       (batch_size, latent_dim) and outputs two tensors:
-#           logits : Logit vector of th discriminator.
-#           probs : Probability vector of th discriminator.
-#   """
-#   logits, probs = discriminator_fn(input_tensor, **kwargs)
-#   discriminator = tf.keras.Model(input_tensor,
-#                                  [logits, probs],
-#                                  name='discriminator')
-#   return discriminator
-
-
 def build_discriminator(input_tensor,
                        discriminator_fn,
                        name='discriminator',
                        **kwargs):
-    """Builds a discriminator that will be called twice. Once with inputs
+    """Builds a discriminator that determines if the input is from the
+    data distribution, P_data, or model distribution, P_G.
+
+    Builds a discriminator that will be called twice. Once with inputs
     from the true distribution q(z|x) and from a shuffled distribution q~(z|x).
     The objective of the discriminator is to predict if the inputs is from
     q(z|x) or q~(z|x).

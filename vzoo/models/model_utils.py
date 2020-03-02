@@ -30,7 +30,7 @@ def load_model(model_dir):
     """
     Loads model weights and configurations, and instantiates a VAEZOO class.
     """
-    _model = tf.keras.models.load_model(model_dir)
+    _model = tf.keras.models.load_model(model_dir, compile=False)
     if hasattr(_model, 'vae'):
         encoder = _model.inference_model
         decoder = _model.generative_model

@@ -75,12 +75,15 @@ class Trainer:
         self.model_dir = None
         self.log_dir = None
         self.vis_dir = None
-        self._random_state = None
-        self._latent_indices = kwargs.get('latent_indices')
+
+        self.save_freq = kwargs.get('save_freq', 1)
+        self.latent_indices = kwargs.get('latent_indices')
+        self.random_state = np.random.RandomState(self.seed)
+
         self._base_groups = ['train', 'val', 'test', 'dis']
         self._global_step = 0
-
         self._params = kwargs
+
         self._set_args()
 
     def _set_summary_writer(self):
@@ -111,18 +114,18 @@ class Trainer:
         self._set_summary_writer()
 
         self.loss_fn = model_utils.check_loss_fn(self.loss_fn)
-        if self.seed is not None:
-            self._random_state = np.random.RandomState(self.seed)
-        if self._latent_indices is None:
+        if self.latent_indices is None:
             if hasattr(self.model, 'latent_dim'):
-                self._latent_indices = np.arange(np.minimum(8, self.model.latent_dim))
+                self.latent_indices = np.arange(np.minimum(8, self.model.latent_dim))
         if self.representation_fn is None:
             self.representation_fn = self._representation_fn
 
-    def _save_model(self, model, model_dir):
-        """Saves mode to disk."""
-        verbose = self._global_step == 1
-        model_utils.save_model(model, model_dir, verbose=verbose)
+    def _save_model_checkpoint(self, verbose=0):
+        """Saves model checkpoint to {output_dir}/models/ckpt_{_global_step}/."""
+        checkpoint_dir = os.path.join(self.model_dir, f'ckpt_{self._global_step}')
+        if not os.path.exists(checkpoint_dir):
+            os.makedirs(checkpoint_dir)
+        model_utils.save_model(self.model, checkpoint_dir, verbose=verbose)
 
     def _representation_fn(self, model):
         """Returns r(x) to compute disentanglement scores."""
@@ -148,8 +151,8 @@ class Trainer:
                                   self.model,
                                   dataset=self.dis_dataset,
                                   traversal_fn=traversal_fn,
-                                  latent_indices=self._latent_indices,
-                                  random_state=self._random_state,
+                                  latent_indices=self.latent_indices,
+                                  random_state=self.random_state,
                                   params=params)
 
     # https://github.com/tensorflow/tensorflow/issues/27120#issuecomment-540071844
@@ -242,4 +245,4 @@ class Trainer:
             self._reset_states(params)
             self._global_step += 1
 
-            self._save_model(self.model, self.model_dir)
+            self._save_model_checkpoint()
