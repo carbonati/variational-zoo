@@ -3,8 +3,8 @@ import time
 import numpy as np
 import tensorflow as tf
 from vzoo.losses.disentangled_losses import compute_loss
-from vzoo.eval.disentangled_metrics import compute_disentanglement_scores
-from vzoo.eval.writer_utils import get_metrics, get_writers, display_logs
+from vzoo.evaluation.disentangled_metrics import compute_disentanglement_scores
+from vzoo.evaluation.writer_utils import get_metrics, get_writers, display_logs
 from vzoo.models import model_utils
 from vzoo.vis.visualize import save_latent_traversal
 from vzoo import config

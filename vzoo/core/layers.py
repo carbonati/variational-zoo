@@ -53,7 +53,7 @@ def _conv2d_bn(x,
                padding='same',
                activation='relu',
                use_bias=False,
-               bn_before=None,
+               bn_before=True,
                name=None,
                **kwargs):
     """Wrapper to construct a 2D conv + BN layer.
@@ -74,7 +74,7 @@ def _conv2d_bn(x,
         Activation function applied to output.
     use_bias : bool (default=False)
         Boolean whether the layer uses the intercept term.
-    bn_before : bool, None (defualt=None)
+    bn_before : bool, None (defualt=True)
         Whether to place a batch norm layer before or after activation,
         or not at all.
             True - batch norm before activation.
@@ -89,15 +89,14 @@ def _conv2d_bn(x,
             Output tensor after applying a conv2d (+ batch norm).
     """
 
-    x = tf.keras.layers.Conv2D(
-        filters,
-        kernel_size,
-        strides=strides,
-        padding=padding,
-        use_bias=use_bias,
-        name=name,
-        **kwargs
-    )(x)
+    x = tf.keras.layers.Conv2D(filters,
+                               kernel_size,
+                               strides=strides,
+                               padding=padding,
+                               use_bias=use_bias,
+                               name=name,
+                               **kwargs
+                               )(x)
 
     if activation is None:
         activation = 'linear'
@@ -202,6 +201,7 @@ def _dense(x,
            activation='relu',
            use_bias=False,
            drop_rate=0,
+           bn_before=None,
            name=None,
            **kwargs):
     """Wrapper to construct a fully connected layer.
@@ -218,6 +218,12 @@ def _dense(x,
         Boolean whether the layer uses the intercept term.
     drop_rate : float (default=0)
         Dropout rate.
+    bn_before : bool, None (defualt=None)
+        Whether to place a batch norm layer before or after activation,
+        or not at all.
+            True - batch norm before activation.
+            False - batch norm after activation.
+            None - No batch norm.
     name : str (default=None)
         Name/prefix of any dense, activation, dropout ops used.
 
@@ -240,7 +246,16 @@ def _dense(x,
         act_name = None if name is None else f'{name}_{activation.__name__}'
         act = partial(activation, name=act_name)
 
-    x = act(x)
+    bn_name = None if name is None else f'{name}_bn'
+    if bn_before is True:
+        x = tf.keras.layers.BatchNormalization(name=bn_name)(x)
+        x = act(x)
+    elif bn_before is False:
+        x = act(x)
+        x = tf.keras.layers.BatchNormalization(name=bn_name)(x)
+    else:
+        x = act(x)
+
     if drop_rate > 0:
         drop_name = None if name is None else f'{name}_dropout'
         x = tf.keras.layers.Dropout(drop_rate, name=drop_rate)(x)

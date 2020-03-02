@@ -1,3 +1,4 @@
+import numpy as np
 import tensorflow as tf
 from vzoo.core.layers import _conv2d_bn, _deconv2d_bn, _dense
 
@@ -48,6 +49,7 @@ def conv_encoder(input_tensor,
                use_bias=False,
                name=f'{layer_prefix}fc')
     return x
+
 
 def conv_decoder(latent_tensor,
                  output_shape,
@@ -101,11 +103,106 @@ def conv_decoder(latent_tensor,
     output = tf.reshape(x, shape=[-1] + list(output_shape))
     return x
 
-def fc_discriminator(latent_tensor,
-                     hidden_units=1000,
-                     activation='leaky_relu',
-                     use_bias=False,
-                     layer_prefix='disc_'):
+
+def fc_encoder(input_tensor,
+               hidden_units=1200,
+               activation='relu',
+               use_bias=False,
+               layer_prefix='enc_'):
+    """MLP encoder as proposed in section A.4 of "beta-VAE: Learning Basic
+    Visual Concepts with a Constrained Variational Framework"
+    (https://openreview.net/references/pdf?id=Sy2fzU9gl).
+
+    Parameters
+    ----------
+    input_tensor : tf.Tensor
+        Input tensor to encode.
+    hidden_units : int (default=1200)
+        Number of hidden units in each FC layer.
+    activation : str, tf.keras.layers.Activation, tf.nn (default='relu')
+        Activation function applied to linear dense layer.
+    use_bias : bool (default=False)
+        Boolean whether the layer uses the intercept term.
+    layer_prefix : str (default='enc_')
+        Prefix of each layer name.
+
+    Returns
+    -------
+    x : tf.Tensor
+        Output tensor of the fully connected encoder.
+    """
+    x = tf.reshape(latent_tensor,
+                   shape=[-1, np.prod(input_tensor.shape[1:])],
+                   name='flatten')
+    x = _dense(x,
+               hidden_units,
+               activation,
+               use_bias=use_bias,
+               name=f'{layer_prefix}fc_1')
+    x = _dense(x,
+               hidden_units,
+               activation,
+               use_bias=use_bias,
+               name=f'{layer_prefix}fc_2')
+    return x
+
+
+def fc_decoder(latent_tensor,
+               output_shape,
+               hidden_units=1200,
+               activation='tanh',
+               use_bias=False,
+               layer_prefix='dec_'):
+    """MLP decoder as proposed in section A.4 of "beta-VAE: Learning Basic
+    Visual Concepts with a Constrained Variational Framework"
+    (https://openreview.net/references/pdf?id=Sy2fzU9gl).
+
+    Parameters
+    ----------
+    latent_tensor : tf.Tensor
+        Input tensor to encode.
+    output_shape : tuple
+        Shape of input to reconstruct.
+    hidden_units : int (default=1200)
+        Number of hidden units in each FC layer.
+    activation : str, tf.keras.layers.Activation, tf.nn (default='tanh')
+        Activation function applied to linear dense layer.
+    use_bias : bool (default=False)
+        Boolean whether the layer uses the intercept term.
+    layer_prefix : str (default='dec_')
+        Prefix of each layer name.
+
+    Returns
+    -------
+    output : tf.Tensor
+        Reconstructed output of size `output_shape`
+    """
+    x = tf.reshape(x,
+                   shape=[-1, np.prod(x.shape[1:])])
+    x = _dense(x,
+               hidden_units,
+               activation,
+               use_bias=use_bias,
+               name=f'{layer_prefix}fc_1')
+    x = _dense(x,
+               hidden_units,
+               activation,
+               use_bias=use_bias,
+               name=f'{layer_prefix}fc_2')
+    x = _dense(x,
+               np.prod(output_shape),
+               activation=None,
+               use_bias=use_bias,
+               name=f'{layer_prefix}output')
+    output = tf.reshape(x, shape=[-1] + list(output_shape))
+    return output
+
+
+def factor_discriminator(latent_tensor,
+                         hidden_units=1000,
+                         activation='leaky_relu',
+                         use_bias=False,
+                         layer_prefix='disc_'):
 
     """Fully connected discriminator as proposed in "Disentangling
     by Factorising" (https://arxiv.org/pdf/1802.05983.pdf).
@@ -179,94 +276,52 @@ def fc_discriminator(latent_tensor,
     probs = tf.clip_by_value(probs, 1e-6, 1 - 1e-6)
     return logits, probs
 
-def fc_encoder(input_tensor,
-               hidden_units=1200,
-               activation='relu',
-               use_bias=False,
-               layer_prefix='enc_'):
-    """MLP encoder as proposed in section A.4 of "beta-VAE: Learning Basic
-    Visual Concepts with a Constrained Variational Framework"
-    (https://openreview.net/references/pdf?id=Sy2fzU9gl).
 
-    Parameters
-    ----------
-    input_tensor : tf.Tensor
-        Input tensor to encode.
-    hidden_units : int (default=1200)
-        Number of hidden units in each FC layer.
-    activation : str, tf.keras.layers.Activation, tf.nn (default='relu')
-        Activation function applied to linear dense layer.
-    use_bias : bool (default=False)
-        Boolean whether the layer uses the intercept term.
-    layer_prefix : str (default='enc_')
-        Prefix of each layer name.
-
-    Returns
-    -------
-    x : tf.Tensor
-        Output tensor of the fully connected encoder.
-    """
+def info_generator(latent_tensor,
+                   dataset='mnist',
+                   name='gen_'):
+    """Builds a infogan generator."""
     x = tf.reshape(latent_tensor,
-                   shape=[-1, np.prod(input_tensor.shape[1:])],
-                   name='flatten')
-    x = _dense(x,
-               hidden_units,
-               activation,
-               use_bias=use_bias,
-               name=f'{layer_prefix}fc_1')
-    x = _dense(x,
-               hidden_units,
-               activation,
-               use_bias=use_bias,
-               name=f'{layer_prefix}fc_2')
+                   shape=(-1, np.prod(latent_tensor.shape[1:])))
+    x = _dense(x, 1024, bn_before=True, activation='relu')
+    x = _dense(x, 128*7*7, bn_before=True, activation='relu')
+    x = _deconv2d_bn(x, 64, 4, strides=2, activation='relu')
+    x = _deconv2d_bn(x, 1, 4, strides=2,  activation=None)
+    x = tf.keras.layers.Flatten()(x)
+
     return x
 
-def fc_decoder(latent_tensor,
-               output_shape,
-               hidden_units=1200,
-               activation='tanh',
-               use_bias=False,
-               layer_prefix='dec_'):
-    """MLP decoder as proposed in section A.4 of "beta-VAE: Learning Basic
-    Visual Concepts with a Constrained Variational Framework"
-    (https://openreview.net/references/pdf?id=Sy2fzU9gl).
 
-    Parameters
-    ----------
-    latent_tensor : tf.Tensor
-        Input tensor to encode.
-    output_shape : tuple
-        Shape of input to reconstruct.
-    hidden_units : int (default=1200)
-        Number of hidden units in each FC layer.
-    activation : str, tf.keras.layers.Activation, tf.nn (default='tanh')
-        Activation function applied to linear dense layer.
-    use_bias : bool (default=False)
-        Boolean whether the layer uses the intercept term.
-    layer_prefix : str (default='dec_')
-        Prefix of each layer name.
-
-    Returns
-    -------
-    output : tf.Tensor
-        Reconstructed output of size `output_shape`
+def info_discriminator(input_tensor,
+                       cat_code_dim=0,
+                       cont_code_dim=0,
+                       dataset='mnist'):
+    """Discriminator D as proposed in section 3 of "InfoGAN: Interpretable
+    Representation Learning by Information Maximizing Generative Adversarial
+    Nets" (https://arxiv.org/pdf/1606.03657.pdf).
     """
-    x = tf.reshape(x,
-                   shape=[-1, np.prod(x.shape[1:])])
-    x = _dense(x,
-               hidden_units,
-               activation,
-               use_bias=use_bias,
-               name=f'{layer_prefix}fc_1')
-    x = _dense(x,
-               hidden_units,
-               activation,
-               use_bias=use_bias,
-               name=f'{layer_prefix}fc_2')
-    x = _dense(x,
-               np.prod(output_shape),
-               activation=None,
-               use_bias=use_bias,
-               name=f'{layer_prefix}output')
-    output = tf.reshape(x, shape=[-1] + list(output_shape))
-    return output
+
+    x = _conv2d_bn(input_tensor, 64, 4, strides=2, bn_before=None, activation='leaky_relu')
+    x = _conv2d_bn(x, 128, 4, strides=2, bn_before=True, activation='leaky_relu')
+    x = _dense(x, 1024, bn_before=True, activation='leaky_relu')
+    x = _dense(x, 1 + cat_code_dim + cont_code_dim, activation='linear')
+
+    return x
+
+
+def info_recognition(input_tensor,
+                     cat_code_dim=0,
+                     cont_code_dim=0,
+                     dataset='mnist'):
+    """Recognition network Q as proposed in section 3 of "InfoGAN:
+    Interpretable Representation  Learning by Information Maximizing Generative
+    Adversarial Nets" (https://arxiv.org/pdf/1606.03657.pdf).
+    """
+
+    x = _conv2d_bn(input_tensor, 64, 4, strides=2, bn_before=None, activation='leaky_relu')
+    x = _conv2d_bn(x, 128, 4, strides=2, bn_before=True, activation='leaky_relu')
+    x = _dense(x, 1024, bn_before=True, activation='leaky_relu')
+    x = _dense(x, 128, bn_before=True, activation='leaky_relu')
+    x = _dense(x, 1 + cat_code_dim + cont_code_dim, activation='linear')
+
+    return x

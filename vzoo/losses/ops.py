@@ -19,11 +19,11 @@ def compute_gaussian_kl(mean, log_var):
     return gaussian_kl
 
 
-def gaussian_log_density(sample, mean, log_var):
+def gaussian_log_density(x, mean, log_var):
     """Computes the log density of a Gaussian."""
     log2pi = tf.math.log(2. * math.pi)
     inv_sigma = tf.exp(-log_var)
-    delta = (sample - mean)
+    delta = (x - mean)
     return - 0.5 * (tf.square(delta) * inv_sigma + log_var + log2pi)
 
 

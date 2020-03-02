@@ -1,5 +1,5 @@
 import vzoo.losses.disentangled_losses as losses
-import vzoo.eval.disentangled_metrics as metrics
+import vzoo.evaluation.disentangled_metrics as metrics
 import vzoo.vis.utils as vis_utils
 from vzoo.data import loaders
 
@@ -33,6 +33,7 @@ DATASET_TO_LOAD_FN = {
 LOSS_FN_DICT = {
     'elbo': losses.compute_elbo_loss,
     'beta_vae': losses.compute_beta_vae_loss,
+    'annealed_vae': losses.compute_annealed_loss,
     'factor_vae': losses.compute_factor_vae_loss,
     'beta_tcvae': losses.compute_tc_vae_loss,
     'dip_vae_i': losses.compute_dip_vae_loss,
@@ -58,6 +59,7 @@ DISENTANGLED_LOSSES= [
     'kl_loss',
     'mi_loss',
     'elbo_loss',
+    'annealed_kl_loss',
     'tc_loss',
     'factor_vae_loss',
     'disc_loss',

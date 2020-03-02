@@ -1,7 +1,7 @@
 import numpy as np
 from sklearn.preprocessing import StandardScaler
-import vzoo.eval.metrics_utils as utils
-from vzoo.eval import writer_utils
+import vzoo.evaluation.metrics_utils as utils
+from vzoo.evaluation import writer_utils
 
 __all__ = [
     'compute_disentanglement_scores',

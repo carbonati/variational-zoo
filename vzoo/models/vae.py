@@ -1,10 +1,7 @@
 import tensorflow as tf
-from vzoo.core.networks import conv_encoder
-from vzoo.core.layers import GaussianSampler
-from vzoo.models.builders import (build_inference_model,
-                                  build_generative_model,
-                                  build_discriminator_model)
-from vzoo.models.model_utils import permute_dims
+from vzoo.core import networks
+from vzoo.core import layers
+from vzoo.models import builders
 
 
 class BaseVAE(tf.keras.Model):
@@ -41,10 +38,14 @@ class BaseVAE(tf.keras.Model):
         """Returns the decoders output shape."""
         return self._input_shape
 
+    @property
+    def name(self):
+        return 'VAE'
+
     def _check_args(self):
         """Sets default `encoder_fn` and `sampling_fn` if none specified."""
-        self.sampling_fn = self.sampling_fn or GaussianSampler
-        self.encoder_fn = self.encoder_fn or conv_encoder
+        self.sampling_fn = self.sampling_fn or layers.GaussianSampler
+        self.encoder_fn = self.encoder_fn or networks.conv_encoder
         self._init_args()
 
     def _init_args(self):
@@ -160,8 +161,8 @@ class VAE(BaseVAE):
 
     This class is sufficient for training many variants, which include
     beta-VAE, TCVAE, DIP-VAE, etc. The loss functions for all models can be
-    found in losses.py where each function includes a reference to the
-    respective paper.
+    found in vzoo.losses.disentangled_losses.py where each function includes
+    a reference to the respective paper.
 
     Parameters
     ----------
@@ -198,18 +199,18 @@ class VAE(BaseVAE):
 
     Example
     -------
-    # beta-VAE proposed in https://openreview.net/pdf?id=Sy2fzU9gl
-    beta = 5
+    # VAE proposed in https://arxiv.org/pdf/1312.6114.pdf
     model = VAE(input_shape=(64, 64, 1),
                 latent_dim=10,
                 encoder_fn=conv_encoder)
+
     z_mean, z_log_var = model.encode(x)
     z_samp = model.reparameterize(z_mean, z_log_var)
     x_decoded = model.decode(z_samp)
 
     recon_loss = bernoulli_loss(x, x_decoded, from_logits=True)
     kl_loss = compute_gaussian_kl_loss(z_mean, z_log_var)
-    elbo_loss = recon_loss + beta * kl_loss
+    elbo_loss = recon_loss + kl_loss
     """
     def __init__(self,
                  input_shape,
@@ -229,15 +230,15 @@ class VAE(BaseVAE):
             self.input_shape,
             name='enc_input'
         )
-        self.inference_model = build_inference_model(
+        self.inference_model = builders.build_inference_model(
             self.input_tensor,
             self.encoder_fn,
             latent_dim=self.latent_dim
         )
-        self.generative_model = build_generative_model(
+        self.generative_model = builders.build_generative_model(
             self.latent_dim,
             output_shape=self.input_shape,
-            decoder_fn=self.decoder_fn,
+            generator_fn=self.decoder_fn,
             inference_model=self.inference_model
         )
         x_decoded = self.call(self.input_tensor)
@@ -273,9 +274,11 @@ class FactorVAE(VAE):
     This class inherits VAE with the addition of building a discriminator
     that should be called twice. Once with inputs from the true distribution
     q(z|x) and a second from a shuffled distribution q~(z|x). The objective of
-    the discriminator is to predict if the inputs is from q(z|x) or q~(z|x).
+    the discriminator is to predict if the input is from q(z|x) or q~(z|x).
 
-    factorised = have diagonal covariance matrix
+    loss_fn : vzoo.losses.disentangled_losses.compute_factor_vae_loss
+
+    factorised == diagonal covariance matrix
 
     Parameters
     ----------
@@ -326,28 +329,31 @@ class FactorVAE(VAE):
         super(FactorVAE, self).__init__(input_shape,
                                         latent_dim,
                                         **kwargs)
-        self.discriminator_fn = discriminator_fn or fc_discriminator
+        self.discriminator_fn = discriminator_fn or networks.factor_discriminator
         self.discriminator = None
-        self.build_model()
+
+    @property
+    def name(self):
+        return 'FactorVAE'
 
     def build_model(self):
         input_tensor = tf.keras.layers.Input(self._input_shape,
                                              name='enc_input')
-        self.inference_model = build_inference_model(
+        self.inference_model = builders.build_inference_model(
             input_tensor,
             self.encoder_fn,
             latent_dim=self.latent_dim
         )
-        self.generative_model = build_generative_model(
+        self.generative_model = builders.build_generative_model(
             self.latent_dim,
             output_shape=self._input_shape,
-            decoder_fn=self.decoder_fn,
+            generator_fn=self.decoder_fn,
             inference_model=self.inference_model
         )
 
         latent_tensor = tf.keras.layers.Input((self.latent_dim),
                                               name='disc_input')
-        self.discriminator = build_discriminator(
+        self.discriminator = builders.build_discriminator(
             latent_tensor,
             self.discriminator_fn
         )
@@ -358,30 +364,188 @@ class FactorVAE(VAE):
 
 
 class BVAE(VAE):
+    """beta-VAE proposed in "beta-VAE: Learning Basic Visual Concepts with a
+    Constrained Variational Framework" (https://openreview.net/pdf?id=Sy2fzU9gl).
 
-    def __init__(self):
-        pass
+    loss_fn : vzoo.losses.disentangled_losses.compute_beta_vae_loss
+
+    Parameters
+    ----------
+    input_shape : tuple, list
+        Shape of input to encode and decode.
+    latent_dim : int
+        Dimension of latent space.
+
+    Example
+    -------
+    # beta-VAE proposed in https://openreview.net/pdf?id=Sy2fzU9gl
+    beta = 5
+
+    model = BVAE(input_shape=(64, 64, 1),
+                 latent_dim=10,
+                 encoder_fn=conv_encoder)
+
+    z_mean, z_log_var = model.encode(x)
+    z_samp = model.reparameterize(z_mean, z_log_var)
+    x_decoded = model.decode(z_samp)
+
+    recon_loss = bernoulli_loss(x, x_decoded, from_logits=True)
+    kl_loss = compute_gaussian_kl_loss(z_mean, z_log_var)
+    elbo_loss = recon_loss + beta * kl_loss
+    """
+    def __init__(self, input_tensor, latent_dim, **kwargs):
+        super(BVAE, self).__init__(input_tensor,
+                                   latent_dim,
+                                   **kwargs)
+
+    @property
+    def name(self):
+        return 'BVAE'
 
 
 class TCVAE(VAE):
+    """"B-TCVAE as proposed in "Isolating Sources of Disentanglement in VAEs"
+    (https://arxiv.org/pdf/1802.04942.pdf).
 
-    def __init__(self):
-        pass
+    loss_fn : vzoo.losses.disentangled_losses.compute_tc_vae_loss
+
+    Parameters
+    ----------
+    input_shape : tuple, list
+        Shape of input to encode and decode.
+    latent_dim : int
+        Dimension of latent space.
+
+    Example
+    -------
+    # B-TCVAE proposed in https://arxiv.org/pdf/1802.04942.pdf
+    beta = 5
+    gamma = 1
+    alpha = 1
+
+    model = TCVAE(input_shape=(64, 64, 1),
+                  latent_dim=10,
+                  encoder_fn=conv_encoder)
+
+    z_mean, z_log_var = model.encode(x)
+    z_samp = model.reparameterize(z_mean, z_log_var)
+    x_decoded = model.decode(z_samp)
+
+    log_qz = ops.compute_log_qz(z_samp, z_mean, z_log_var)
+    log_prod_qz_i = ops.compute_log_prod_qz_i(z_samp, z_mean, z_log_var)
+    log_qz_cond_x = ops.compute_log_qz_cond_x(z_samp, z_mean, z_log_var)
+    log_pz = ops.compute_log_pz(z_samp, z_mean, z_log_var)
+
+    recon_loss = recon_loss_fn(x, x_decoded, from_logits=True)
+    mi_loss = tf.reduce_mean(log_qz_cond_x - log_qz)
+    tc_loss = tf.reduce_mean(log_qz - log_prod_qz_i)
+    kl_loss = tf.reduce_mean(log_prod_qz_i - log_pz)
+    # ELBO TC-Decomposition
+    decomp_loss = (alpha * mi_loss
+                   + beta * tc_loss
+                   + gamma * kl_loss)
+
+    tcvae_loss = recon_loss + decomp_loss
+    """
+    def __init__(self, input_tensor, latent_dim, **kwargs):
+        super(TCVAE, self).__init__(input_tensor,
+                                    latent_dim,
+                                    **kwargs)
+
+    @property
+    def name(self):
+        return 'TCVAE'
 
 
 class DIPVAE(VAE):
+    """DIP-VAE as proposed in "Variational Inference of Disentangled Latent
+    Concepts from Unlabeled Observations" (https://arxiv.org/pdf/1711.00848.pdf).
 
-    def __init__(self):
-        pass
+    loss_fn : vzoo.losses.disentangled_losses.compute_dip_vae_loss
+
+    Parameters
+    ----------
+    input_shape : tuple, list
+        Shape of input to encode and decode.
+    latent_dim : int
+        Dimension of latent space.
+
+    Example
+    -------
+    # DIP-VAE-i proposed in https://arxiv.org/pdf/1711.00848.pdf
+    lambda_d = 10
+    lambda_od = 10
+
+    model = DIPVAE(input_shape=(64, 64, 1),
+                   latent_dim=10,
+                   encoder_fn=conv_encoder)
+
+    z_mean, z_logvar = model.encode(x)
+    z_samp = model.reparameterize(z_mean, z_logvar)
+    x_decoded = model.decode(z_samp)
+
+    recon_loss = recon_loss_fn(x, x_decoded, from_logits=True)
+    kl_loss = ops.compute_gaussian_kl(z_mean, z_logvar)
+    elbo_loss = recon_loss + kl_loss
+
+    cov_z_mean = ops.compute_cov_matrix(z_mean)
+    cov_z_on_diag, cov_z_off_diag = ops.compute_on_off_diag(cov_z_mean)
+
+    regularizer_od = lambda_od * tf.reduce_sum(cov_z_off_diag**2)
+    regularizer_d = lambda_d * tf.reduce_sum((cov_z_on_diag - 1)**2)
+    dip_regularizer = regularizer_od + regularizer_d
+    dip_loss = elbo_loss + dip_regularizer
+    """
+    def __init__(self, input_tensor, latent_dim, **kwargs):
+        super(DIPVAE, self).__init__(input_tensor,
+                                     latent_dim,
+                                     **kwargs)
+
+    @property
+    def name(self):
+        return 'DIPVAE'
 
 
 class AnnealedVAE(VAE):
+    """B-VAE with controlled capacity as proposed in "Understanding disentangling
+    in β-VAE" (https://arxiv.org/pdf/1804.03599.pdf).
 
-    def __init__(self):
-        pass
+    loss_fn : vzoo.losses.disentangled_losses.compute_annealed_loss
 
+    Parameters
+    ----------
+    input_shape : tuple, list
+        Shape of input to encode and decode.
+    latent_dim : int
+        Dimension of latent space.
 
-class VQVAE(VAE):
+    Example
+    -------
+    # Section A.2, B-VAE with controlled capacity from the paper.
+    gamma = 1000
+    capacity = 25
+    iter_threshold = 100000
+    C = np.minimum(capacity, capacity * epoch / iter_threshold)
 
-    def __init__(self):
-        pass
+    model = AnnealedVAE(input_shape=(64, 64, 1),
+                        latent_dim=10,
+                        encoder_fn=conv_encoder)
+
+    z_mean, z_logvar = model.encode(x)
+    z_samp = model.reparameterize(z_mean, z_logvar)
+    x_decoded = model.decode(z_samp)
+
+    recon_loss = recon_loss_fn(x, x_decoded, from_logits=True)
+    kl_loss = ops.compute_gaussian_kl(z_mean, z_logvar)
+    annealed_kl_loss = gamma * tf.math.abs(kl_loss - C)
+    elbo_loss = recon_loss + annealed_kl_loss
+    """
+    def __init__(self, input_tensor, latent_dim, **kwargs):
+        super(AnnealedVAE, self).__init__(input_tensor,
+                                          latent_dim,
+                                          **kwargs)
+
+    @property
+    def name(self):
+        return 'AnnealedVAE'
+
